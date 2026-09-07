@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: erp-support-copilot
+metadata:
+  template: erp-support-copilot@1.0.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  web:
+    project: ./src
+    language: ts
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: .
+      # Built on an arm64 Mac, run on amd64 in Azure. Without this the image
+      # pushes fine and then fails to start.
+      platform: linux/amd64

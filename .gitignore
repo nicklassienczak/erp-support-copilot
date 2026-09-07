@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# azd
+.azure/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Seed corpus artifacts (fetched, not committed)
+data/downloaded/

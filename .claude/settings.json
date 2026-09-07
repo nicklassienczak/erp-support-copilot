@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"$(date) hook fired\" >> /tmp/claude-hook-check.txt; jq -r '.tool_input.file_path // .tool_response.filePath // empty' | grep -qE '\\.(py|ts|tsx|js|jsx|mjs|cjs|go|rs|java|cs|rb|php|kt|swift|scala|sql|sh|ps1|tf|ipynb)$' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"Code changed. Per CLAUDE.md: update the relevant documentation in this same turn (docstring/README/docs/) if this change affects behavior, public API, config, or setup steps. Skip only for trivial edits.\"}}' || true",
+            "suppressOutput": true
+          }
+        ]
+      }
+    ]
+  }
+}
