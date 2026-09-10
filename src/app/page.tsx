@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 type Source = { title: string; score: number };
@@ -105,11 +106,16 @@ export default function Chat() {
 
   return (
     <main className="mx-auto flex h-dvh max-w-3xl flex-col p-4">
-      <header className="border-b border-black/10 pb-3 dark:border-white/15">
-        <h1 className="text-lg font-semibold">ERP Support Copilot</h1>
-        <p className="text-sm text-black/60 dark:text-white/60">
-          Grounded in Dynamics 365 Business Central documentation
-        </p>
+      <header className="flex items-baseline justify-between border-b border-black/10 pb-3 dark:border-white/15">
+        <div>
+          <h1 className="text-lg font-semibold">ERP Support Copilot</h1>
+          <p className="text-sm text-black/60 dark:text-white/60">
+            Grounded in Dynamics 365 Business Central documentation
+          </p>
+        </div>
+        <Link href="/insights" className="text-sm underline underline-offset-4">
+          insights
+        </Link>
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto py-4">

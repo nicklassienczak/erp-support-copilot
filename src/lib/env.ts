@@ -24,4 +24,8 @@ export const env = {
   searchEndpoint: () => required("AZURE_SEARCH_ENDPOINT"),
   searchKey: () => required("AZURE_SEARCH_KEY"),
   searchIndex: () => process.env.AZURE_SEARCH_INDEX || "erp-docs",
+
+  cosmosEndpoint: () => required("AZURE_COSMOS_ENDPOINT"),
+  cosmosKey: () => required("AZURE_COSMOS_KEY"),
+  cosmosDatabase: () => process.env.AZURE_COSMOS_DATABASE || "copilot",
 };

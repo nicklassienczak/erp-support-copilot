@@ -33,6 +33,18 @@ the semantic ranker; the top 5 chunks go to the chat model, which answers with
 `[n]` citations. Each answer reports its token counts and measured search
 compute.
 
+Every answer writes a usage event to Cosmos. `/insights` separates what is
+**measured** (token counts from the model, compute units from the search
+service's response header, latency from Azure's server-side breakdown) from what
+is **assumed** (token prices, minutes saved per question, consultant hourly
+rate). The assumptions are editable inputs on the page, not hidden constants: a
+saving figure whose baseline you cannot see is the first thing a client's finance
+team takes apart.
+
+Token prices are unverified — Azure's pricing page currently shows placeholders
+for this model family — which is another reason they belong on screen as an
+input.
+
 ## Key decisions
 
 | Decision | Reason |
@@ -113,6 +125,8 @@ infra/main.bicep        subscription-scoped root deployment
 infra/modules/          foundry, search, storage, cosmos, monitoring, containerapp
 src/app/api/chat/       retrieve -> generate -> stream (newline-delimited JSON)
 src/lib/retrieve.ts     hybrid search + semantic reranking
+src/lib/cosmos.ts       one usage event per answer
+src/app/insights/       cost + ROI page: measured above, assumptions below
 scripts/                seeding and data-plane search setup
 data/downloaded/        seed corpus (fetched, not committed)
 ```
@@ -140,7 +154,7 @@ count against quota.
 - [x] Phase 1 — platform resources (hand-built in Azure, Bicep written to match)
 - [x] Phase 2 — Foundry + streaming chat
 - [x] Phase 3 — indexing pipeline + hybrid retrieval with citations
-- [ ] Phase 4 — telemetry + ROI insights page
+- [x] Phase 4 — telemetry + ROI insights page
 - [ ] Phase 5 — Entra ID auth + GitHub Actions OIDC
 - [ ] Phase 6 — verified teardown
 - [ ] Phase 7 — agentic retrieval comparison (stretch)

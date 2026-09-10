@@ -1,6 +1,7 @@
 import { AzureOpenAI } from "openai";
 import { env } from "@/lib/env";
 import { asContext, retrieveHybrid, type Passage } from "@/lib/retrieve";
+import { recordUsage } from "@/lib/cosmos";
 
 // POST /api/chat
 //
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
   });
 
   const encoder = new TextEncoder();
+  let usage: Usage | undefined;
 
   const send = (controller: ReadableStreamDefaultController, event: unknown) =>
     controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
@@ -116,8 +118,6 @@ export async function POST(request: Request) {
           reasoning_effort: "minimal",
         });
 
-        let usage: Usage | undefined;
-
         for await (const chunk of completion) {
           // `choices` is empty on the prompt-filter prologue chunk and on the
           // final usage chunk, so index defensively.
@@ -140,9 +140,26 @@ export async function POST(request: Request) {
           }
         }
 
-        // Phase 4 persists this to Cosmos and turns it into cost per answer.
         send(controller, { type: "done", usage });
         controller.close();
+
+        // Persist after closing the stream: telemetry must never delay or
+        // break the answer the user is waiting for.
+        if (usage) {
+          recordUsage({
+            question,
+            model: env.chatDeployment(),
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            reasoningTokens: usage.reasoningTokens,
+            cachedTokens: usage.cachedTokens,
+            searchComputeUnits: retrieval.computeUnits,
+            searchLatencyMs: retrieval.latencyMs,
+            ttftMs: usage.latency?.user_visible_ttft_ms,
+            totalLatencyMs: usage.latency?.service_ttlt_ms,
+            sources: retrieval.passages.map((passage: Passage) => passage.title),
+          }).catch((error) => console.error("[/api/chat] usage write failed", error));
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error("[/api/chat]", error);
