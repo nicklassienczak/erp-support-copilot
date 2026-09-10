@@ -12,32 +12,14 @@
 // Idempotent: every call is a PUT, so re-running updates in place.
 //
 // Usage: node scripts/search-setup.mjs
-//        API_VERSION=2024-07-01 node scripts/search-setup.mjs
+//        API_VERSION=2026-04-01 node scripts/search-setup.mjs
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { env, API_VERSION, INDEX } from "./lib.mjs";
 
 // --- config ---------------------------------------------------------------
 
-function loadEnv() {
-  const raw = readFileSync(join(root, "src/.env.local"), "utf8");
-  const env = {};
-  for (const line of raw.split("\n")) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match) env[match[1]] = match[2];
-  }
-  return env;
-}
-
-const env = loadEnv();
-const API_VERSION = process.env.API_VERSION || "2024-07-01";
-
 const SEARCH_ENDPOINT = env.AZURE_SEARCH_ENDPOINT;
 const SEARCH_KEY = env.AZURE_SEARCH_KEY;
-const INDEX = env.AZURE_SEARCH_INDEX || "erp-docs";
 const DATASOURCE = `${INDEX}-datasource`;
 const SKILLSET = `${INDEX}-skillset`;
 const INDEXER = `${INDEX}-indexer`;
@@ -57,20 +39,54 @@ const STORAGE_CONNECTION =
 
 // --- REST helper ----------------------------------------------------------
 
-async function put(path, body) {
+async function del(path) {
   const url = `${SEARCH_ENDPOINT}/${path}?api-version=${API_VERSION}`;
   const response = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": SEARCH_KEY,
-    },
-    body: JSON.stringify(body),
+    method: "DELETE",
+    headers: { "api-key": SEARCH_KEY },
   });
-  if (!response.ok) {
-    throw new Error(`${path}\n  ${response.status} ${await response.text()}`);
+  // 404 is fine: nothing to delete on a first run.
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`DELETE ${path}\n  ${response.status} ${await response.text()}`);
   }
-  console.log(`  ok  ${path.split("/").pop()}`);
+  console.log(`  deleted  ${path.split("/").pop()}`);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Index creation right after a delete intermittently returns a 500 with an
+// internal HttpClient.Timeout: deletion is asynchronous, so the name can still
+// be held when the create arrives. Retrying with backoff is the documented
+// answer, not a workaround.
+async function put(path, body, attempts = 4) {
+  const url = `${SEARCH_ENDPOINT}/${path}?api-version=${API_VERSION}`;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": SEARCH_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (response.ok) {
+      console.log(`  ok  ${path.split("/").pop()}`);
+      return;
+    }
+
+    const text = await response.text();
+    const transient = response.status >= 500 || response.status === 429;
+
+    if (!transient || attempt === attempts) {
+      throw new Error(`${path}\n  ${response.status} ${text}`);
+    }
+
+    const backoff = attempt * 5000;
+    console.log(`  retry ${attempt}/${attempts - 1} in ${backoff / 1000}s (${response.status})`);
+    await sleep(backoff);
+  }
 }
 
 // --- 1. index -------------------------------------------------------------
@@ -235,6 +251,19 @@ const indexer = {
 
 console.log(`Search service: ${SEARCH_ENDPOINT}`);
 console.log(`API version:    ${API_VERSION}\n`);
+
+// --reset drops the index and indexer before recreating them.
+//
+// Needed whenever the corpus changes, because an indexer re-run only adds and
+// updates: chunks belonging to files you removed from the container stay in the
+// index forever, quietly polluting retrieval. Deleting the index is the honest
+// way to guarantee it matches the source.
+if (process.argv.includes("--reset")) {
+  console.log("Resetting:");
+  await del(`indexers/${INDEXER}`);
+  await del(`indexes/${INDEX}`);
+  console.log();
+}
 
 // Order matters: the index must exist before the skillset that projects into
 // it, and both before the indexer that references them.

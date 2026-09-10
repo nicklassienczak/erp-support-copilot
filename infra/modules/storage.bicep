@@ -12,6 +12,8 @@ param resourceToken string
 param docsContainerName string = 'docs'
 
 resource storage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
+  // uniqueString() is always 13 chars, so this is always 15.
+  #disable-next-line BCP334
   name: 'st${resourceToken}'
   location: location
   tags: tags

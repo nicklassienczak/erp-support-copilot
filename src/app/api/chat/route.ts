@@ -1,4 +1,4 @@
-import { foundryClient } from "@/lib/foundry";
+import { AzureOpenAI } from "openai";
 import { env } from "@/lib/env";
 import { asContext, retrieveHybrid, type Passage } from "@/lib/retrieve";
 
@@ -32,17 +32,12 @@ type ChatMessage = {
   content: string;
 };
 
-// Azure-specific server-side latency breakdown, absent from the OpenAI SDK
-// types. ttft = time to first token, ttlt = time to last token, tbt = time
-// between tokens. "engine" excludes queueing, "service" includes it, so the
-// gap between them shows how loaded the deployment is.
+// Azure sends a server-side latency breakdown that the OpenAI SDK types don't
+// know about. Only the fields the UI shows are typed; the rest of the object
+// still arrives if it's ever wanted.
 type LatencyCheckpoint = {
-  engine_ttft_ms?: number;
-  engine_ttlt_ms?: number;
-  service_ttft_ms?: number;
-  service_ttlt_ms?: number;
-  pre_inference_ms?: number;
   user_visible_ttft_ms?: number;
+  service_ttlt_ms?: number;
 };
 
 type Usage = {
@@ -62,7 +57,16 @@ export async function POST(request: Request) {
   }
 
   const question = messages[messages.length - 1]?.content ?? "";
-  const client = foundryClient();
+
+  // apiVersion is mandatory on Azure: the REST surface is versioned separately
+  // from the SDK, so a new model can be unusable until this string moves.
+  // Swap apiKey for azureADTokenProvider to go keyless.
+  const client = new AzureOpenAI({
+    endpoint: env.foundryEndpoint(),
+    apiKey: env.foundryKey(),
+    apiVersion: env.openAiApiVersion(),
+  });
+
   const encoder = new TextEncoder();
 
   const send = (controller: ReadableStreamDefaultController, event: unknown) =>

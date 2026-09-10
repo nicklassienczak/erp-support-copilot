@@ -24,7 +24,7 @@ export type RetrievalResult = {
   latencyMs: number;
 };
 
-const API_VERSION = "2024-07-01";
+const API_VERSION = "2026-04-01";
 
 export async function retrieveHybrid(query: string, top = 5): Promise<RetrievalResult> {
   const started = Date.now();

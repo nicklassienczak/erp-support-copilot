@@ -1,8 +1,12 @@
 // Container Apps environment + the Next.js web app.
 //
-// minReplicas: 0 means the app costs nothing while idle (the consumption plan's
-// monthly free grant covers the rest of a demo's traffic). The trade-off is a
+// minReplicas 0 means the app costs nothing while idle - the consumption plan's
+// monthly free grant covers a demo's traffic entirely. The trade-off is a
 // ~5-10s cold start on the first request after a quiet period.
+//
+// The image comes from a public ghcr.io package, so there is no registry, no
+// pull secret and no managed identity here. That was a deliberate cost choice:
+// Container Registry Basic is ~$5/month and was the largest single line item.
 
 param location string
 param tags object
@@ -10,18 +14,13 @@ param resourceToken string
 
 param logAnalyticsWorkspaceId string
 param appInsightsConnectionString string
-param registryLoginServer string
-param identityResourceId string
-param identityClientId string
 
-@description('Image to run. Empty on the first provision, when a public placeholder is used until azd pushes the real image.')
+@description('Image to run. Empty uses a public placeholder until a real image is pushed.')
 param imageName string = ''
 
-@description('Extra environment variables, appended by later phases (Foundry, Search, Cosmos endpoints).')
+@description('Service endpoints. Keys belong in Container Apps secrets, not here.')
 param extraEnv array = []
 
-param cpu string = '0.5'
-param memory string = '1Gi'
 param minReplicas int = 0
 param maxReplicas int = 3
 param targetPort int = 3000
@@ -45,7 +44,6 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2025-01-01'
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
-    zoneRedundant: false
   }
 }
 
@@ -54,29 +52,15 @@ resource web 'Microsoft.App/containerApps@2025-01-01' = {
   name: 'ca-web-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${identityResourceId}': {}
-    }
-  }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
-      activeRevisionsMode: 'Single'
       ingress: {
         external: true
-        // The placeholder image listens on 80; the real one on 3000.
+        // The placeholder image listens on 80, the real one on 3000.
         targetPort: usePlaceholder ? 80 : targetPort
         transport: 'auto'
-        allowInsecure: false
       }
-      registries: usePlaceholder ? [] : [
-        {
-          server: registryLoginServer
-          identity: identityResourceId
-        }
-      ]
     }
     template: {
       containers: [
@@ -84,39 +68,18 @@ resource web 'Microsoft.App/containerApps@2025-01-01' = {
           name: 'web'
           image: usePlaceholder ? placeholderImage : imageName
           resources: {
-            cpu: json(cpu)
-            memory: memory
+            cpu: json('0.5')
+            memory: '1Gi'
           }
           env: union([
-            {
-              // Tells DefaultAzureCredential which user-assigned identity to use.
-              name: 'AZURE_CLIENT_ID'
-              value: identityClientId
-            }
-            {
-              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: appInsightsConnectionString
-            }
-            {
-              name: 'PORT'
-              value: string(targetPort)
-            }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
+            { name: 'PORT', value: string(targetPort) }
           ], extraEnv)
         }
       ]
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
-        rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '20'
-              }
-            }
-          }
-        ]
       }
     }
   }
@@ -124,4 +87,3 @@ resource web 'Microsoft.App/containerApps@2025-01-01' = {
 
 output name string = web.name
 output uri string = 'https://${web.properties.configuration.ingress.fqdn}'
-output environmentName string = containerAppsEnvironment.name

@@ -3,34 +3,9 @@
 // Usage: node scripts/search-status.mjs
 //        node scripts/search-status.mjs "posting groups"   # also run a query
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { INDEX, search } from "./lib.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-const env = Object.fromEntries(
-  readFileSync(join(root, "src/.env.local"), "utf8")
-    .split("\n")
-    .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
-    .filter(Boolean)
-    .map((m) => [m[1], m[2]]),
-);
-
-const API_VERSION = process.env.API_VERSION || "2024-07-01";
-const INDEX = env.AZURE_SEARCH_INDEX || "erp-docs";
-
-async function api(path, init = {}) {
-  const response = await fetch(
-    `${env.AZURE_SEARCH_ENDPOINT}/${path}${path.includes("?") ? "&" : "?"}api-version=${API_VERSION}`,
-    {
-      ...init,
-      headers: { "Content-Type": "application/json", "api-key": env.AZURE_SEARCH_KEY },
-    },
-  );
-  if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
-  return response.json();
-}
+const api = async (path, init) => (await search(path, init)).json();
 
 const status = await api(`indexers/${INDEX}-indexer/status`);
 const last = status.lastResult ?? {};

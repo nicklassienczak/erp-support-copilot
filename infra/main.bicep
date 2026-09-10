@@ -1,9 +1,10 @@
 targetScope = 'subscription'
 
 // ---------------------------------------------------------------------------
-// ERP Support Copilot — root deployment.
-// Creates the resource group and wires every module together.
-// Grows one module per build phase; Phase 1 = platform skeleton only.
+// ERP Support Copilot - root deployment.
+//
+// Describes the resources that were first built by hand in the portal, so the
+// whole stack can be recreated in a fresh environment with `azd up`.
 // ---------------------------------------------------------------------------
 
 @minLength(1)
@@ -12,21 +13,20 @@ targetScope = 'subscription'
 param environmentName string
 
 @minLength(1)
-@description('Primary region. Sweden Central is the default: free-tier AI Search there includes semantic ranker and agentic retrieval, and it keeps data in the EU.')
+@description('Primary region. Sweden Central keeps data in the EU and supports every service used here.')
 param location string
 
-@description('Object id of the developer or CI principal running the deployment. azd populates this; it is granted data-plane roles so local runs work under `az login`.')
-param principalId string = ''
-
-@description('Container image for the web service. Empty on first provision, then azd supplies the built image.')
+@description('Image to run. Empty on first provision, then azd supplies the built image.')
 param webImageName string = ''
 
 var tags = {
   'azd-env-name': environmentName
-  project: 'erp-support-copilot'
+  project: 'erp-copilot'
+  owner: 'nsk'
 }
 
-// Short deterministic suffix for globally-unique resource names.
+// Short deterministic suffix for globally-unique names. Deterministic matters:
+// re-running targets the same resources instead of creating new ones.
 var resourceToken = uniqueString(subscription().id, environmentName, location)
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
@@ -38,31 +38,31 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
 module monitoring './modules/monitoring.bicep' = {
   name: 'monitoring'
   scope: rg
-  params: {
-    location: location
-    tags: tags
-    resourceToken: resourceToken
-  }
+  params: { location: location, tags: tags, resourceToken: resourceToken }
 }
 
-module registry './modules/registry.bicep' = {
-  name: 'registry'
+module foundry './modules/foundry.bicep' = {
+  name: 'foundry'
   scope: rg
-  params: {
-    location: location
-    tags: tags
-    resourceToken: resourceToken
-  }
+  params: { location: location, tags: tags, resourceToken: resourceToken }
 }
 
-module identity './modules/identity.bicep' = {
-  name: 'identity'
+module search './modules/search.bicep' = {
+  name: 'search'
   scope: rg
-  params: {
-    location: location
-    tags: tags
-    resourceToken: resourceToken
-  }
+  params: { location: location, tags: tags, resourceToken: resourceToken }
+}
+
+module storage './modules/storage.bicep' = {
+  name: 'storage'
+  scope: rg
+  params: { location: location, tags: tags, resourceToken: resourceToken }
+}
+
+module cosmos './modules/cosmos.bicep' = {
+  name: 'cosmos'
+  scope: rg
+  params: { location: location, tags: tags, resourceToken: resourceToken }
 }
 
 module containerApp './modules/containerapp.bicep' = {
@@ -74,31 +74,23 @@ module containerApp './modules/containerapp.bicep' = {
     resourceToken: resourceToken
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
-    registryLoginServer: registry.outputs.loginServer
-    identityResourceId: identity.outputs.resourceId
-    identityClientId: identity.outputs.clientId
     imageName: webImageName
+    // Endpoints only. Keys are supplied as Container Apps secrets when the app
+    // is actually deployed, which is not yet.
+    extraEnv: [
+      { name: 'AZURE_FOUNDRY_ENDPOINT', value: foundry.outputs.endpoint }
+      { name: 'AZURE_SEARCH_ENDPOINT', value: search.outputs.endpoint }
+      { name: 'AZURE_COSMOS_ENDPOINT', value: cosmos.outputs.endpoint }
+      { name: 'AZURE_STORAGE_ACCOUNT', value: storage.outputs.name }
+    ]
   }
 }
 
-module rbac './modules/rbac.bicep' = {
-  name: 'rbac'
-  scope: rg
-  params: {
-    registryName: registry.outputs.name
-    appPrincipalId: identity.outputs.principalId
-    developerPrincipalId: principalId
-  }
-}
-
-// --- azd-consumed outputs -------------------------------------------------
 output AZURE_LOCATION string = location
-output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_RESOURCE_GROUP string = rg.name
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = registry.outputs.name
-
-// --- app configuration outputs --------------------------------------------
-output SERVICE_WEB_NAME string = containerApp.outputs.name
+output AZURE_FOUNDRY_ENDPOINT string = foundry.outputs.endpoint
+output AZURE_SEARCH_ENDPOINT string = search.outputs.endpoint
+output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
+output AZURE_STORAGE_ACCOUNT string = storage.outputs.name
 output SERVICE_WEB_URI string = containerApp.outputs.uri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.appInsightsConnectionString
