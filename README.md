@@ -73,14 +73,37 @@ az bicep install
 ## Getting started
 
 ```bash
-az login                      # interactive
-azd auth login                # interactive
-azd env new dev               # creates the azd environment
-azd env set AZURE_LOCATION swedencentral
-azd up                        # provision infrastructure, then build and deploy
+az login
+./scripts/write-env.sh        # fetches endpoints + keys into src/.env.local
+cd src && npm install && npm run dev
 ```
 
-`azd up` prints the app URL when it finishes.
+`write-env.sh` reads the resource metadata from Azure and writes a gitignored
+`src/.env.local`, printing only masked values so nothing secret reaches your
+shell history. Re-run it any time; never edit the file by hand.
+
+To provision the infrastructure from scratch in a new environment:
+
+```bash
+azd auth login
+azd env new dev
+azd env set AZURE_LOCATION swedencentral
+azd up
+```
+
+## Authentication: keys today, managed identity tomorrow
+
+The target subscription grants **Contributor**, which permits reading resource
+keys but *not* creating role assignments (`Microsoft.Authorization/*/write`).
+Keyless managed-identity auth therefore can't be deployed as written, so the app
+authenticates with keys held in `.env.local` locally and Container Apps secrets
+in Azure.
+
+The managed-identity design is still in the repo, behind the
+`useManagedIdentity` parameter (default `false`). When the role-assignment
+permission is granted, flipping it switches every service to Entra ID auth and
+`disableLocalAuth` turns keys off. The flag documents the constraint rather than
+hiding it.
 
 ## Repository layout
 
@@ -111,8 +134,8 @@ reserved and count against quota.
 ## Build status
 
 - [x] Phase 0 — tooling
-- [ ] Phase 1 — platform skeleton deploys
-- [ ] Phase 2 — Foundry + streaming chat
+- [x] Phase 1 — platform resources created (hand-built in Azure; Bicep written to match)
+- [x] Phase 2 — Foundry + streaming chat
 - [ ] Phase 3 — indexing pipeline + hybrid retrieval
 - [ ] Phase 4 — telemetry + ROI insights
 - [ ] Phase 5 — Entra ID auth + GitHub Actions OIDC
