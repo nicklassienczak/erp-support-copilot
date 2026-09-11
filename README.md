@@ -90,6 +90,37 @@ Re-seeding a *different* corpus needs `node scripts/search-setup.mjs --reset`.
 An indexer re-run only adds and updates, so chunks from files you removed would
 otherwise stay in the index forever, quietly polluting retrieval.
 
+## Authentication on the deployed app
+
+Container Apps' built-in auth ("easy auth") sits in front of the container as a
+proxy: unauthenticated browser requests are redirected to Entra ID, API requests
+get a 401, and the application code contains no auth logic at all.
+
+```bash
+az ad app create --display-name erp-copilot-auth \
+  --web-redirect-uris "https://<app-fqdn>/.auth/login/aad/callback"
+
+# one command, so the secret never appears on screen
+SECRET=$(az ad app credential reset --id <app-id> --years 1 --query password -o tsv)
+az containerapp secret set -n <app> -g <rg> --secrets aad-client-secret="$SECRET" -o none
+
+az containerapp auth microsoft update -n <app> -g <rg> \
+  --client-id <app-id> --client-secret-name aad-client-secret \
+  --issuer "https://login.microsoftonline.com/<tenant>/v2.0" --yes
+az containerapp auth update -n <app> -g <rg> \
+  --unauthenticated-client-action RedirectToLoginPage \
+  --redirect-provider azureactivedirectory
+```
+
+Two flags worth knowing: `az ad app credential reset` **replaces** every existing
+credential unless you pass `--append` — destructive by default, which is useful
+when rotating a leaked secret and dangerous otherwise. And `--issuer` and
+`--tenant-id` are mutually exclusive on `auth microsoft update`.
+
+Client secrets expire. This one expires in a year, which is the standard way
+auth breaks on a date nobody has in their calendar — and the best argument for
+managed identity, which has no secret at all.
+
 ## Deploying
 
 CI builds the image and publishes it to `ghcr.io` on every push to `main`
@@ -174,6 +205,6 @@ count against quota.
 - [x] Phase 2 — Foundry + streaming chat
 - [x] Phase 3 — indexing pipeline + hybrid retrieval with citations
 - [x] Phase 4 — telemetry + ROI insights page
-- [ ] Phase 5 — Entra ID auth + GitHub Actions OIDC
+- [x] Phase 5 — Entra ID auth + CI image builds
 - [ ] Phase 6 — verified teardown
 - [ ] Phase 7 — agentic retrieval comparison (stretch)
