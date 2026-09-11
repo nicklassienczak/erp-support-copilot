@@ -50,9 +50,9 @@ input.
 | Decision | Reason |
 |---|---|
 | Sweden Central | EU data residency, and every service used here is available in it. Search and Foundry must share a region for key-based connections. |
-| AI Search **Serverless Developer** (preview) | The one Free-tier slot in this subscription was already taken. Serverless drops compute to zero 10 minutes after an index goes idle, and returns measured cost per query in a response header. |
+| AI Search **Serverless Developer** (preview) | The subscription's single Free-tier slot was already in use. Serverless drops compute to zero 10 minutes after an index goes idle, and returns measured cost per query in a response header. |
 | API version `2026-04-01` | Not optional: index creation on `2024-07-01` *hangs* on the serverless tier until the HTTP/2 stream times out, with no error returned. |
-| Cosmos DB serverless, **not** free tier | The subscription's one free-tier slot is permanent and shared; claiming it for a sandbox denies it to a real project. Serverless costs cents here. |
+| Cosmos DB serverless, **not** free tier | A free-tier account is one per subscription, permanent and irreversible; claiming it for a sandbox denies it to a real project. Serverless costs cents here. |
 | ghcr.io instead of Container Registry | ACR Basic (~$5/month) was the largest line item in the whole project. A public package needs no registry, no pull secret and no identity. |
 | Index definitions in `scripts/`, not Bicep | Indexes, skillsets and indexers are data-plane objects with no ARM representation. Pretending otherwise is a common mistake. |
 | API keys | Not a preference — see below. |
@@ -100,15 +100,16 @@ azd up
 
 ## Authentication: keys, and why that's a compromise
 
-This subscription grants **Contributor**, which can read resource keys but
-cannot create role assignments (`Microsoft.Authorization/*/write`). Managed
-identity needs those, so the app uses keys from `.env.local`.
+This was built against a subscription granting **Contributor**, which can read
+resource keys but cannot create role assignments
+(`Microsoft.Authorization/*/write`). Managed identity needs those, so the app
+uses keys from `.env.local`.
 
-The project demonstrated the cost of that by accident. Mid-build the Contributor
-role expired — PIM just-in-time activation lapsing — removing *all*
-control-plane access; the resource group could no longer even be read. **The app
-kept working**, because the data-plane keys extracted earlier were still valid.
-Revoking someone's role does nothing about keys they already copied.
+The project demonstrated the cost of that by accident. Mid-build the role
+expired — a just-in-time activation window closing — removing *all* control-plane
+access; the resource group could no longer even be read. **The app kept
+working**, because the data-plane keys read earlier were still valid. Revoking
+someone's role does nothing about keys they already hold.
 
 That is the argument for managed identity, `disableLocalAuth` and treating key
 rotation as real operational work. Switching over is small — swap `apiKey` for
