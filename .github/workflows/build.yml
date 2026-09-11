@@ -1,0 +1,63 @@
+name: build
+
+# Builds the container image and publishes it to ghcr.io.
+#
+# Deployment is deliberately NOT here. Deploying from Actions means giving a
+# federated identity a role on the resource group, and creating role assignments
+# needs permissions this subscription doesn't grant. Rather than commit a job
+# that can never run, the deploy step is a documented command (see README).
+#
+# With `Role Based Access Control Administrator` on the resource group, the
+# missing piece is:
+#
+#   az ad app create --display-name erp-copilot-ci
+#   az ad app federated-credential create --id <appId> --parameters '{
+#     "name":"main","issuer":"https://token.actions.githubusercontent.com",
+#     "subject":"repo:<owner>/<repo>:ref:refs/heads/main",
+#     "audiences":["api://AzureADTokenExchange"]}'
+#   az role assignment create --role Contributor --assignee <appId> --scope <rg>
+#
+# then a deploy job using azure/login@v2 with `permissions: id-token: write`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets GITHUB_TOKEN push to ghcr.io. No personal access token needed.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/Dockerfile
+          # Container Apps runs amd64. Building on an arm64 Mac without this
+          # produces an image that pushes fine and then crash-loops.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          # Layer cache in GitHub Actions: npm ci is the slow step and only
+          # changes when the lockfile does.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
