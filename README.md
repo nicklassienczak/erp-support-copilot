@@ -112,10 +112,32 @@ az containerapp auth update -n <app> -g <rg> \
   --redirect-provider azureactivedirectory
 ```
 
-Two flags worth knowing: `az ad app credential reset` **replaces** every existing
-credential unless you pass `--append` — destructive by default, which is useful
-when rotating a leaked secret and dangerous otherwise. And `--issuer` and
-`--tenant-id` are mutually exclusive on `auth microsoft update`.
+### Three things that cost time here
+
+**ID token issuance must be enabled**, or login succeeds and then the callback
+fails:
+
+```bash
+az ad app update --id <app-id> --enable-id-token-issuance true
+```
+
+Easy auth uses the hybrid flow (`response_type=code+id_token`,
+`response_mode=form_post`), which requires it. The portal's identity-provider
+wizard sets this silently; `az ad app create` does not. The failure looks like a
+cookie or session problem because it happens *after* a successful sign-in.
+
+**Secrets are injected at container start, not read live.** Changing a secret
+without restarting the revision changes nothing — the app keeps using the old
+value, and the failure looks like a bad credential rather than a stale one:
+
+```bash
+az containerapp revision restart -n <app> -g <rg> --revision <revision>
+```
+
+**`az ad app credential reset` replaces every existing credential** unless you
+pass `--append`. Destructive by default: useful for invalidating a leaked
+secret, dangerous on an app registration something else depends on. Also,
+`--issuer` and `--tenant-id` are mutually exclusive on `auth microsoft update`.
 
 Client secrets expire. This one expires in a year, which is the standard way
 auth breaks on a date nobody has in their calendar — and the best argument for
