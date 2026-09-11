@@ -90,6 +90,24 @@ Re-seeding a *different* corpus needs `node scripts/search-setup.mjs --reset`.
 An indexer re-run only adds and updates, so chunks from files you removed would
 otherwise stay in the index forever, quietly polluting retrieval.
 
+## Deploying
+
+CI builds the image and publishes it to `ghcr.io` on every push to `main`
+(`.github/workflows/build.yml`). The package is public, so Container Apps pulls
+it with no registry, no pull secret and no identity.
+
+```bash
+./scripts/deploy.sh
+```
+
+Deployment is a script rather than a CI job on purpose: deploying from Actions
+means giving a federated identity a role on the resource group, and creating
+role assignments is not permitted here. The workflow documents the missing
+piece rather than committing a job that could never run.
+
+Cold start after an idle period is ~12s, the cost of `minReplicas: 0`. Set it to
+1 (~$15/month) before demoing to anyone.
+
 To provision the infrastructure from scratch:
 
 ```bash
